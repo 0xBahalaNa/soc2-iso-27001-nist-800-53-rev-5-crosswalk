@@ -102,6 +102,10 @@ def _join_controls(controls: list[str]) -> str:
     return " / ".join(controls)
 
 
+def _md_cell(value: str) -> str:
+    return value.replace("|", "\\|")
+
+
 def _sort_key(row: dict[str, Any]) -> tuple[str, str]:
     nist = row.get("nist_800_53", [])
     primary_nist = nist[0] if isinstance(nist, list) and nist else ""
@@ -141,10 +145,10 @@ def emit_markdown(rows: list[dict[str, str]], path: Path) -> None:
     ]
 
     for row in rows:
-        rationale = row["rationale"].replace("\n", " ")
         lines.append(
-            f"| {row['soc2_cc']} | {row['nist_800_53']} | "
-            f"{row['iso_27001_2022']} | {row['confidence']} | {rationale} |"
+            f"| {_md_cell(row['soc2_cc'])} | {_md_cell(row['nist_800_53'])} | "
+            f"{_md_cell(row['iso_27001_2022'])} | {_md_cell(row['confidence'])} | "
+            f"{_md_cell(row['rationale'])} |"
         )
 
     gap_rows = [row for row in rows if row["confidence"] != "Strong"]
@@ -212,6 +216,11 @@ def main() -> int:
         return 1
 
     if args.check:
+        if any((args.out_md, args.out_json, args.out_csv)):
+            print(
+                "warning: --check validates only; --out-* paths are ignored",
+                file=sys.stderr,
+            )
         return 0
 
     missing_outputs = [
@@ -228,11 +237,14 @@ def main() -> int:
             "the following arguments are required when not using --check: "
             + ", ".join(missing_outputs)
         )
-
-    rows = normalize_rows(data["mappings"])
-    emit_markdown(rows, args.out_md)
-    emit_json(rows, args.out_json)
-    emit_csv(rows, args.out_csv)
+    try:
+        rows = normalize_rows(data["mappings"])
+        emit_markdown(rows, args.out_md)
+        emit_json(rows, args.out_json)
+        emit_csv(rows, args.out_csv)
+    except OSError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
