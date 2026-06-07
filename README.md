@@ -8,7 +8,7 @@
 
 A crosswalk that pivots on **SOC 2 Trust Services Criteria (Common Criteria)** and maps **NIST 800-53 Rev 5** and **ISO 27001:2022 Annex A** onto each criterion — every row carrying a confidence label (Strong / Partial / Contextual) and a short "why this mapping" rationale. The mapping data lives in a single `mappings.yaml`; a small Python build script emits Markdown, JSON, and CSV, with a `--check` validate-only gate so the artifacts never drift from the source.
 
-> **Status:** v1.0 in active development. The crosswalk table is generated from `mappings.yaml` once the build script lands; until then the families in scope are listed below.
+> **Status:** v1.0. The crosswalk below is generated from `mappings.yaml` by `build_crosswalk.py` — rebuild the Markdown, JSON, and CSV artifacts with the commands in [Quickstart](#quickstart).
 
 ## Why This Exists
 
@@ -29,20 +29,27 @@ NIST 800-53 has the most granular catalog (1000+ controls), but it's engineer-la
 
 ## Controls Addressed
 
-Generated from `mappings.yaml` via `build_crosswalk.py`. v1.0 anchors, by NIST family:
+Generated from `mappings.yaml` by `build_crosswalk.py` — and also emitted as [`crosswalk.md`](crosswalk.md), [`crosswalk.json`](crosswalk.json), and [`crosswalk.csv`](crosswalk.csv). The pivot is SOC 2 Common Criteria; NIST 800-53 Rev 5 is the bridge column and ISO 27001:2022 Annex A the third. Each row carries a Strong / Partial / Contextual confidence label and a "why this mapping" rationale.
 
-| NIST 800-53 Rev 5 | Family | SOC 2 neighborhood |
-|---|---|---|
-| AC-2, AC-3, AC-6 | Access Control | CC6 — logical access |
-| IA-2, IA-5 | Identification & Authentication | CC6 — authentication |
-| AU-2, AU-6 | Audit & Accountability | CC7 — system operations / monitoring |
-| CM-2, CM-6 | Configuration Management | CC8 — change management |
-
-*The full SOC 2 ↔ NIST ↔ ISO rows, confidence labels, and rationale are emitted from `mappings.yaml` in v1.0.*
+| SOC 2 CC | NIST 800-53 | ISO 27001:2022 | Confidence | Rationale |
+| --- | --- | --- | --- | --- |
+| CC6.1 | AC-3 | A.5.15 / A.8.3 | Strong | AC-3 enforces approved authorizations for logical access at the system and application layer. CC6.1 frames logical-access security architecture and enforcement mechanisms. ISO A.5.15 (access control) and A.8.3 (information access restriction) address the same enforcement intent from policy and technical restriction angles. |
+| CC6.2 | AC-2 | A.5.16 / A.5.18 | Strong | AC-2 governs the full account lifecycle — approve before create, modify, disable, remove, and periodic review. CC6.2 covers registration and authorization of new users before credentials are issued. ISO A.5.16 (identity management) and A.5.18 (access rights) map to provisioning and rights assignment during onboarding. |
+| CC6.3 | AC-6 / AC-2 | A.8.2 / A.8.3 | Strong | AC-6 authorizes only the access necessary for assigned tasks (least privilege). AC-2 supports modification and removal when roles change. CC6.3 covers role-based access, modification, and removal including least privilege and segregation of duties. ISO A.8.2 (privileged access rights) and A.8.3 (information access restriction) align with privilege minimization and access boundaries. |
+| CC6.6 | IA-2 | A.8.5 / A.5.16 | Strong | IA-2 requires unique identification and authentication of organizational users. CC6.6 addresses measures against threats from outside the boundary, including authentication strength. ISO A.8.5 (secure authentication) and A.5.16 (identity management) cover the authentication mechanism and the identity binding it depends on. |
+| CC6.6 | IA-5 | A.5.17 | Partial | IA-5 manages the authenticator lifecycle — issuance, strength, default changes, rotation, and revocation. CC6.6 blends authentication mechanism and credential management. ISO separates A.5.17 (authentication information / authenticator management) from A.8.5 (secure authentication mechanism). An ISO audit may require the authenticator-policy artifact separately even when SOC 2 and NIST evidence already covers the mechanism. |
+| CC7.2 | AU-2 | A.8.15 | Strong | AU-2 requires identifying event types the system can log, selecting the subset to log, and reviewing that selection for investigative adequacy. CC7.2 monitors system components for anomalies. ISO A.8.15 (logging) aligns with defining and maintaining what gets logged. |
+| CC7.3 | AU-6 | A.8.16 | Strong | AU-6 requires reviewing and analyzing audit records on a defined frequency, reporting findings, and adjusting depth when risk changes. CC7.3 evaluates security events for potential incidents. ISO A.8.16 (monitoring activities) maps to the analytic loop over logged events. |
+| CC8.1 | CM-2 | A.8.9 | Partial | CM-2 develops and maintains a baseline configuration under configuration control, reviewed on defined frequency and on install or upgrade. CC8.1 frames broad change management — authorize, design, test, approve, and implement changes. ISO A.8.9 (configuration management) is config-to-config alignment, but the hop to the CC8.1 change pivot is loose. CM-2 keeps a foot in the change door via baseline maintained under configuration control. |
+| CC8.1 | CM-6 | A.8.9 | Contextual | CM-6 establishes and implements restrictive configuration settings, documents deviations, and monitors changes to settings. CC8.1 expects change authorization and approval evidence. CM-6 is pure hardened-settings state — a STIG or SCAP scan demonstrates configuration posture but does not satisfy a change-approval ticket. ISO A.8.9 aligns on configuration management; A.8.32 (change management) is the closer ISO frame for the SOC 2 pivot. |
 
 ## Gaps & Conflicts
 
-Not every cross-framework mapping is one-to-one. Rows where the frameworks diverge in scope, depth, or framing are labeled **Partial** or **Contextual** and surfaced in a dedicated section. The point of the crosswalk is to be honest about where a single piece of evidence satisfies all three frameworks and where it doesn't — that's where multi-framework programs actually spend effort.
+The value of the crosswalk is being explicit about where a single piece of evidence satisfies all three frameworks and where it doesn't — that's where multi-framework programs actually spend effort. The three non-Strong rows and their practical implications:
+
+- **CC6.6 → IA-5 / A.5.17 (Partial).** ISO splits authenticator management (A.5.17) from the authentication mechanism (A.8.5), which NIST IA-5 and SOC 2 CC6.6 blend together — so an ISO audit may demand the authenticator-policy artifact separately even when the SOC 2 / NIST evidence already covers the mechanism.
+- **CC8.1 → CM-2 / A.8.9 (Partial).** CM-2's "baseline under configuration control" maps cleanly to ISO A.8.9 config-to-config, but the hop to SOC 2 CC8.1's broad *change*-management pivot is loose — CM-2 only keeps a foot in the change door.
+- **CC8.1 → CM-6 / A.8.9 (Contextual).** CM-6 is pure hardened-settings *state*: a STIG/SCAP scan proves configuration posture but doesn't satisfy a change-approval ticket, so ISO A.8.32 (change management) — not A.8.9 — is the closer frame for the SOC 2 pivot.
 
 ## How an Auditor Uses This Output
 
@@ -52,17 +59,16 @@ For a given SOC 2 Common Criterion, the row names the corresponding NIST 800-53 
 
 - **Single source of truth:** mappings live in version-controlled YAML, not a spreadsheet — diffable and reviewable in pull requests.
 - **Machine-readable outputs:** the build emits JSON and CSV alongside the Markdown table, so the crosswalk feeds tooling, not just human eyes.
-- **Validate-only gate:** `build_crosswalk.py --check` parses and validates the source without emitting (non-zero exit on failure) — drop it into CI to keep the emitted artifacts in sync with `mappings.yaml`.
+- **Validate-only gate:** `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns without emitting (non-zero exit on failure) — a CI build gate that rejects malformed mappings before they merge.
 
 ## Sample Output
 
-*The shape `build_crosswalk.py` emits from `mappings.yaml` (illustrative; finalized in v1.0):*
+Real rows from the emitted artifacts (regenerate any time with the build command):
 
 `crosswalk.csv`
 ```csv
 soc2_cc,nist_800_53,iso_27001_2022,confidence,rationale
-CC6.1,AC-3,A.5.15,Strong,"Access enforcement at the policy/system layer."
-CC8.1,CM-2,A.8.9,Partial,"SOC 2 frames change mgmt broadly; NIST CM-2 is baseline-config specific."
+CC6.1,AC-3,A.5.15 / A.8.3,Strong,AC-3 enforces approved authorizations for logical access at the system and application layer. CC6.1 frames logical-access security architecture and enforcement mechanisms. ISO A.5.15 (access control) and A.8.3 (information access restriction) address the same enforcement intent from policy and technical restriction angles.
 ```
 
 `crosswalk.json`
@@ -70,15 +76,13 @@ CC8.1,CM-2,A.8.9,Partial,"SOC 2 frames change mgmt broadly; NIST CM-2 is baselin
 {
   "soc2_cc": "CC6.1",
   "nist_800_53": "AC-3",
-  "iso_27001_2022": "A.5.15",
+  "iso_27001_2022": "A.5.15 / A.8.3",
   "confidence": "Strong",
-  "rationale": "All address access enforcement at the policy/system layer; SOC 2 frames it as logical access, NIST as the enforcement mechanism, ISO as policy."
+  "rationale": "AC-3 enforces approved authorizations for logical access at the system and application layer. CC6.1 frames logical-access security architecture and enforcement mechanisms. ISO A.5.15 (access control) and A.8.3 (information access restriction) address the same enforcement intent from policy and technical restriction angles."
 }
 ```
 
 ## Quickstart
-
-*Target interface (build lands in v1.0):*
 
 ```bash
 git clone https://github.com/0xBahalaNa/soc2-iso27001-nist-crosswalk.git
