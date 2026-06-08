@@ -59,7 +59,7 @@ For a given SOC 2 Common Criterion, the row names the corresponding NIST 800-53 
 
 - **Single source of truth:** mappings live in version-controlled YAML, not a spreadsheet — diffable and reviewable in pull requests.
 - **Machine-readable outputs:** the build emits JSON and CSV alongside the Markdown table, so the crosswalk feeds tooling, not just human eyes.
-- **Validate-only gate:** `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns without emitting (non-zero exit on failure) — a CI build gate that rejects malformed mappings before they merge.
+- **Validate-only gate:** `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns, then rebuilds all three artifacts in memory and fails if any committed file has drifted from `mappings.yaml` (non-zero exit on validation or drift) — a CI gate that rejects malformed mappings and stale artifacts before they merge.
 
 ## Sample Output
 
@@ -94,7 +94,7 @@ pip install -r requirements.txt
 python build_crosswalk.py --source mappings.yaml \
   --out-md crosswalk.md --out-json crosswalk.json --out-csv crosswalk.csv
 
-# CI validate-only mode (no emit; non-zero exit on validation failure)
+# CI validate-only mode (no emit; non-zero exit on validation failure or artifact drift)
 python build_crosswalk.py --source mappings.yaml --check
 ```
 

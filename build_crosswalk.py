@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import re
 import sys
@@ -12,6 +13,10 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+DEFAULT_OUT_MD = Path("crosswalk.md")
+DEFAULT_OUT_JSON = Path("crosswalk.json")
+DEFAULT_OUT_CSV = Path("crosswalk.csv")
 
 VALID_CONFIDENCE = frozenset({"Strong", "Partial", "Contextual"})
 SOC2_CC_PATTERN = re.compile(r"^CC\d+\.\d+$")
@@ -131,8 +136,8 @@ def normalize_rows(mappings: list[dict[str, Any]]) -> list[dict[str, str]]:
     return normalized
 
 
-def emit_markdown(rows: list[dict[str, str]], path: Path) -> None:
-    """Write a human-readable Markdown table plus Gaps & Conflicts section."""
+def render_markdown(rows: list[dict[str, str]]) -> str:
+    """Return a human-readable Markdown table plus Gaps & Conflicts section."""
     lines = [
         "# Unified Controls Crosswalk",
         "",
@@ -163,24 +168,71 @@ def emit_markdown(rows: list[dict[str, str]], path: Path) -> None:
             ]
         )
 
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write("\n".join(lines))
-        handle.write("\n")
+    return "\n".join(lines) + "\n"
+
+
+def render_json(rows: list[dict[str, str]]) -> str:
+    """Return normalized rows as a JSON array string."""
+    return json.dumps(rows, indent=2) + "\n"
+
+
+def render_csv(rows: list[dict[str, str]]) -> str:
+    """Return normalized rows as CSV with README field names."""
+    buf = io.StringIO(newline="")
+    writer = csv.DictWriter(buf, fieldnames=FIELDNAMES, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue()
+
+
+def emit_markdown(rows: list[dict[str, str]], path: Path) -> None:
+    """Write a human-readable Markdown table plus Gaps & Conflicts section."""
+    path.write_text(render_markdown(rows), encoding="utf-8", newline="")
 
 
 def emit_json(rows: list[dict[str, str]], path: Path) -> None:
     """Write normalized rows as a JSON array."""
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(rows, handle, indent=2)
-        handle.write("\n")
+    path.write_text(render_json(rows), encoding="utf-8", newline="")
 
 
 def emit_csv(rows: list[dict[str, str]], path: Path) -> None:
     """Write normalized rows as CSV with README field names."""
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(rows)
+    path.write_text(render_csv(rows), encoding="utf-8", newline="")
+
+
+def check_drift(
+    rows: list[dict[str, str]],
+    md_path: Path,
+    json_path: Path,
+    csv_path: Path,
+    *,
+    source_label: str = "mappings.yaml",
+) -> list[str]:
+    """Compare freshly rendered artifacts to on-disk files; return drift messages."""
+    artifacts = (
+        (md_path, render_markdown(rows)),
+        (json_path, render_json(rows)),
+        (csv_path, render_csv(rows)),
+    )
+    messages: list[str] = []
+
+    for path, expected in artifacts:
+        try:
+            actual = path.read_bytes()
+        except OSError as exc:
+            messages.append(
+                f"error: {path}: {exc} (expected from {source_label})"
+            )
+            continue
+
+        if actual == expected.encode("utf-8"):
+            continue
+
+        messages.append(
+            f"error: {path}: drift vs {source_label} (rebuild required)"
+        )
+
+    return messages
 
 
 def main() -> int:
@@ -196,7 +248,10 @@ def main() -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Validate only; do not emit output files",
+        help=(
+            "Validate mappings and verify committed artifacts match a fresh build "
+            "(no emit)"
+        ),
     )
     parser.add_argument("--out-md", type=Path, help="Output Markdown path")
     parser.add_argument("--out-json", type=Path, help="Output JSON path")
@@ -216,11 +271,21 @@ def main() -> int:
         return 1
 
     if args.check:
-        if any((args.out_md, args.out_json, args.out_csv)):
-            print(
-                "warning: --check validates only; --out-* paths are ignored",
-                file=sys.stderr,
-            )
+        md_path = args.out_md or DEFAULT_OUT_MD
+        json_path = args.out_json or DEFAULT_OUT_JSON
+        csv_path = args.out_csv or DEFAULT_OUT_CSV
+        rows = normalize_rows(data["mappings"])
+        drift_messages = check_drift(
+            rows,
+            md_path,
+            json_path,
+            csv_path,
+            source_label=str(args.source),
+        )
+        if drift_messages:
+            for message in drift_messages:
+                print(message, file=sys.stderr)
+            return 1
         return 0
 
     missing_outputs = [
