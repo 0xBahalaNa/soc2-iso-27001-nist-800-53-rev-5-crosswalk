@@ -139,7 +139,7 @@ def normalize_rows(mappings: list[dict[str, Any]]) -> list[dict[str, str]]:
 def render_markdown(rows: list[dict[str, str]]) -> str:
     """Return a human-readable Markdown table plus Gaps & Conflicts section."""
     lines = [
-        "# Unified Controls Crosswalk",
+        "# SOC 2 / ISO 27001 / NIST 800-53 Rev 5 Crosswalk",
         "",
         "Pivot: SOC 2 Trust Services Criteria (Common Criteria). "
         "NIST 800-53 Rev 5 is the bridge column; "

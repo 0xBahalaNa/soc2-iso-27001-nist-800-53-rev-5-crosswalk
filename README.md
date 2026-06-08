@@ -4,7 +4,7 @@
 ![NIST 800-53](https://img.shields.io/badge/NIST-800--53%20Rev%205-004990?style=flat)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat)
 
-# Unified Controls Crosswalk
+# SOC 2 / ISO 27001 / NIST 800-53 Rev 5 Crosswalk
 
 A crosswalk that pivots on **SOC 2 Trust Services Criteria (Common Criteria)** and maps **NIST 800-53 Rev 5** and **ISO 27001:2022 Annex A** onto each criterion — every row carrying a confidence label (Strong / Partial / Contextual) and a short "why this mapping" rationale. The mapping data lives in a single `mappings.yaml`; a small Python build script emits Markdown, JSON, and CSV, with a `--check` validate-only gate so the artifacts never drift from the source.
 
