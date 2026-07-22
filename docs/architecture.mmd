@@ -1,0 +1,9 @@
+%% Editable Mermaid source for the README "Architecture Overview" section.
+%% Keep this file in sync with the inline ```mermaid fence in README.md.
+%% Diff-able source of truth for the architecture graph (no separate PNG export).
+graph LR
+    A["mappings.yaml<br/>SOC 2 / NIST / ISO rows"] --> B["build_crosswalk.py<br/>validate + normalize + emit"]
+    B --> C["crosswalk.md"]
+    B --> D["crosswalk.json"]
+    B --> E["crosswalk.csv"]
+    B --> F["--check gate<br/>schema + drift vs committed"]

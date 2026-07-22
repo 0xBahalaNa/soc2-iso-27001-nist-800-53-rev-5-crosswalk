@@ -10,6 +10,21 @@ A crosswalk that pivots on **SOC 2 Trust Services Criteria (Common Criteria)** a
 
 > **Status:** v1.0. The crosswalk below is generated from `mappings.yaml` by `build_crosswalk.py` — rebuild the Markdown, JSON, and CSV artifacts with the commands in [Quickstart](#quickstart).
 
+## Architecture Overview
+
+```mermaid
+graph LR
+    A["mappings.yaml<br/>SOC 2 / NIST / ISO rows"] --> B["build_crosswalk.py<br/>validate + normalize + emit"]
+    B --> C["crosswalk.md"]
+    B --> D["crosswalk.json"]
+    B --> E["crosswalk.csv"]
+    B --> F["--check gate<br/>schema + drift vs committed"]
+```
+
+Editable Mermaid source (kept in sync with the fence above): [`docs/architecture.mmd`](docs/architecture.mmd).
+
+`mappings.yaml` is the single source of truth for SOC 2 Common Criteria rows mapped to NIST 800-53 Rev 5 and ISO 27001:2022 Annex A (confidence + rationale). `build_crosswalk.py` validates schema and ID patterns, normalizes rows, and emits Markdown, JSON, and CSV. `--check` rebuilds those artifacts in memory and fails on validation errors or drift against the committed files — a gate so the published table never diverges from the YAML.
+
 ## Why This Exists
 
 A security program that answers to more than one framework ends up maintaining the same control intent in three different places — one spreadsheet for SOC 2, one for ISO 27001, one for NIST. This crosswalk collapses that into a single source of truth. It pivots on SOC 2 Common Criteria — the auditor-language most commercial programs already speak — maps the NIST 800-53 Rev 5 and ISO 27001:2022 Annex A equivalents onto each criterion, and is explicit about where a mapping is clean versus where the frameworks genuinely diverge.
