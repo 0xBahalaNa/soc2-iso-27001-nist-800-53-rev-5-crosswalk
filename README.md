@@ -31,6 +31,12 @@ A security program that answers to more than one framework ends up maintaining t
 
 I built it to learn cross-framework control mapping by doing it. Reading the source standards, deciding each equivalence myself, and writing down the reasoning rather than copying a vendor's mapping table.
 
+## Impact
+
+The manual alternative is three spreadsheets, one per framework, each restating the same control intent and each updated (or not) independently. When they disagree, nobody can say which one is current, and the mapping rationale lives in whoever built them.
+
+Here the mapping is maintained once, in one reviewable YAML file, and `--check` exits non-zero if any published artifact has drifted from it. Three-times maintenance becomes one, drift becomes a one-command check instead of an eventual discovery, and every equivalence carries its confidence label and written reasoning, so evidence-reuse decisions (reuse on Strong, collect separately on Partial or Contextual) are made from the row, not from memory.
+
 ## Why SOC 2 as the Pivot
 
 NIST 800-53 has the most granular catalog (1000+ controls), but it's engineer-language. SOC 2 Common Criteria (~33 CC) is the auditor-language commercial programs already understand. Pivoting on SOC 2 keeps the crosswalk compact and readable while preserving engineering precision through the NIST column. NIST 800-53 stays the bridge. Every SOC 2 row maps to one or more NIST controls; the reverse isn't true.
@@ -74,7 +80,7 @@ For a given SOC 2 Common Criterion, the row names the corresponding NIST 800-53 
 
 - Mappings live in version-controlled YAML, not a spreadsheet. Diffable and reviewable in pull requests.
 - The build emits JSON and CSV alongside the Markdown table, so the crosswalk feeds tooling, not only human eyes.
-- `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns, then rebuilds all three artifacts in memory and fails if any committed file has drifted from `mappings.yaml` (non-zero exit on validation or drift). CI rejects malformed mappings and stale artifacts before they merge.
+- `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns, then rebuilds all three artifacts in memory and fails if any committed file has drifted from `mappings.yaml` (non-zero exit on validation or drift). Run it before merging to reject malformed mappings and stale artifacts; wiring it into a CI workflow is a planned follow-up.
 
 ## Sample Output
 
