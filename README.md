@@ -6,7 +6,12 @@
 
 # SOC 2 / ISO 27001 / NIST 800-53 Rev 5 Crosswalk
 
-I map NIST 800-53 Rev 5 and ISO 27001:2022 Annex A onto SOC 2 Trust Services Criteria (Common Criteria). Every row carries a confidence label (Strong / Partial / Contextual) and a short "why this mapping" rationale. The mapping data lives in one `mappings.yaml`. A small Python build script emits Markdown, JSON, and CSV, with a `--check` validate-only gate so the artifacts never drift from the source.
+**A program answering to SOC 2, ISO 27001, and NIST at once collects the same evidence three times, and three spreadsheets drift apart the first quarter nobody reconciles them. That duplicated collection is the most common waste in a commercial compliance program.** This crosswalk holds the mapping in one file and fails the build when the published tables drift from it.
+
+- SOC 2 Common Criteria as the pivot, with NIST 800-53 Rev 5 and ISO 27001:2022 Annex A hung off each criterion
+- Every row carries a Strong / Partial / Contextual confidence label and a one-line rationale
+- One `mappings.yaml`; `build_crosswalk.py` emits Markdown, JSON, and CSV, and `--check` fails on validation errors or drift
+- Python, stdlib plus PyYAML
 
 > **Status:** v1.0. The crosswalk below is generated from `mappings.yaml` by `build_crosswalk.py`. Rebuild the Markdown, JSON, and CSV artifacts with the commands in [Quickstart](#quickstart).
 
