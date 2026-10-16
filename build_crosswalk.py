@@ -51,8 +51,8 @@ def validate_mappings(data: dict[str, Any]) -> list[str]:
         errors.append("mappings must be a list")
         return errors
 
-    if len(mappings) != 9:
-        errors.append(f"mappings must contain exactly 9 rows (found {len(mappings)})")
+    if len(mappings) < 1:
+        errors.append(f"mappings must contain at least 1 row (found {len(mappings)})")
 
     for index, row in enumerate(mappings, start=1):
         prefix = f"row {index}"
