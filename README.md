@@ -85,7 +85,7 @@ For a given SOC 2 Common Criterion, the row names the corresponding NIST 800-53 
 
 - Mappings live in version-controlled YAML, not a spreadsheet. Diffable and reviewable in pull requests.
 - The build emits JSON and CSV alongside the Markdown table, so the crosswalk feeds tooling, not only human eyes.
-- `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns, then rebuilds all three artifacts in memory and fails if any committed file has drifted from `mappings.yaml` (non-zero exit on validation or drift). Run it before merging to reject malformed mappings and stale artifacts; wiring it into a CI workflow is a planned follow-up.
+- `build_crosswalk.py --check` validates the source schema, row count, and framework ID patterns, then rebuilds all three artifacts in memory and fails if any committed file has drifted from `mappings.yaml` (non-zero exit on validation or drift). CI runs `python build_crosswalk.py --source mappings.yaml --check` on each pull request and on each push to `main`.
 
 ## Sample Output
 
