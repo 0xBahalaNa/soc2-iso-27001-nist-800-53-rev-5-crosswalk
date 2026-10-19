@@ -3,7 +3,6 @@
 # deterministic on every platform -- a Windows checkout
 # (core.autocrlf=true) would otherwise rewrite them to CRLF and
 # the gate would false-fail even when mappings.yaml is correct.
-# `--check` byte-compares the marked README span too.
 crosswalk.csv  text eol=lf
 crosswalk.md   text eol=lf
 crosswalk.json text eol=lf
