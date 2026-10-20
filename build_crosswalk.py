@@ -9,14 +9,11 @@ import io
 import json
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import yaml
-
-DEFAULT_OUT_MD = Path("crosswalk.md")
-DEFAULT_OUT_JSON = Path("crosswalk.json")
-DEFAULT_OUT_CSV = Path("crosswalk.csv")
 
 VALID_CONFIDENCE = frozenset({"Strong", "Partial", "Contextual"})
 SOC2_CC_PATTERN = re.compile(r"^CC\d+\.\d+$")
@@ -185,38 +182,35 @@ def render_csv(rows: list[dict[str, str]]) -> str:
     return buf.getvalue()
 
 
-def emit_markdown(rows: list[dict[str, str]], path: Path) -> None:
-    """Write a human-readable Markdown table plus Gaps & Conflicts section."""
-    path.write_text(render_markdown(rows), encoding="utf-8", newline="")
+RenderFn = Callable[[list[dict[str, str]]], str]
+
+# Name is the argparse dest suffix: --out-<name> binds args.out_<name>.
+ARTIFACTS: tuple[tuple[str, Path, RenderFn], ...] = (
+    ("md", Path("crosswalk.md"), render_markdown),
+    ("json", Path("crosswalk.json"), render_json),
+    ("csv", Path("crosswalk.csv"), render_csv),
+)
 
 
-def emit_json(rows: list[dict[str, str]], path: Path) -> None:
-    """Write normalized rows as a JSON array."""
-    path.write_text(render_json(rows), encoding="utf-8", newline="")
-
-
-def emit_csv(rows: list[dict[str, str]], path: Path) -> None:
-    """Write normalized rows as CSV with README field names."""
-    path.write_text(render_csv(rows), encoding="utf-8", newline="")
+def emit_artifacts(rows: list[dict[str, str]], paths: dict[str, Path]) -> None:
+    """Write each rendered artifact to its output path."""
+    for name, _default_path, render_fn in ARTIFACTS:
+        paths[name].write_text(render_fn(rows), encoding="utf-8", newline="")
 
 
 def check_drift(
     rows: list[dict[str, str]],
-    md_path: Path,
-    json_path: Path,
-    csv_path: Path,
+    overrides: dict[str, Path | None],
     *,
     source_label: str = "mappings.yaml",
 ) -> list[str]:
     """Compare freshly rendered artifacts to on-disk files; return drift messages."""
-    artifacts = (
-        (md_path, render_markdown(rows)),
-        (json_path, render_json(rows)),
-        (csv_path, render_csv(rows)),
-    )
     messages: list[str] = []
 
-    for path, expected in artifacts:
+    for name, default_path, render_fn in ARTIFACTS:
+        override = overrides[name]
+        path = override if override is not None else default_path
+        expected = render_fn(rows)
         try:
             actual = path.read_bytes()
         except OSError as exc:
@@ -270,16 +264,16 @@ def main() -> int:
             print(f"error: {error}", file=sys.stderr)
         return 1
 
+    rows = normalize_rows(data["mappings"])
+    overrides: dict[str, Path | None] = {
+        name: getattr(args, f"out_{name}")
+        for name, _default_path, _render_fn in ARTIFACTS
+    }
+
     if args.check:
-        md_path = args.out_md or DEFAULT_OUT_MD
-        json_path = args.out_json or DEFAULT_OUT_JSON
-        csv_path = args.out_csv or DEFAULT_OUT_CSV
-        rows = normalize_rows(data["mappings"])
         drift_messages = check_drift(
             rows,
-            md_path,
-            json_path,
-            csv_path,
+            overrides,
             source_label=str(args.source),
         )
         if drift_messages:
@@ -288,25 +282,21 @@ def main() -> int:
             return 1
         return 0
 
-    missing_outputs = [
-        name
-        for name, value in (
-            ("--out-md", args.out_md),
-            ("--out-json", args.out_json),
-            ("--out-csv", args.out_csv),
-        )
-        if value is None
-    ]
+    missing_outputs: list[str] = []
+    emit_paths: dict[str, Path] = {}
+    for name, _default_path, _render_fn in ARTIFACTS:
+        path = overrides[name]
+        if path is None:
+            missing_outputs.append(f"--out-{name}")
+        else:
+            emit_paths[name] = path
     if missing_outputs:
         parser.error(
             "the following arguments are required when not using --check: "
             + ", ".join(missing_outputs)
         )
     try:
-        rows = normalize_rows(data["mappings"])
-        emit_markdown(rows, args.out_md)
-        emit_json(rows, args.out_json)
-        emit_csv(rows, args.out_csv)
+        emit_artifacts(rows, emit_paths)
     except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
