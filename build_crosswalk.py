@@ -200,6 +200,7 @@ def emit_artifacts(rows: list[dict[str, str]], paths: dict[str, Path]) -> None:
 
 def check_drift(
     rows: list[dict[str, str]],
+    source: Path,
     overrides: dict[str, Path | None],
     *,
     source_label: str = "mappings.yaml",
@@ -209,7 +210,7 @@ def check_drift(
 
     for name, default_path, render_fn in ARTIFACTS:
         override = overrides[name]
-        path = override if override is not None else default_path
+        path = override if override is not None else source.parent / default_path
         expected = render_fn(rows)
         try:
             actual = path.read_bytes()
@@ -273,6 +274,7 @@ def main() -> int:
     if args.check:
         drift_messages = check_drift(
             rows,
+            args.source,
             overrides,
             source_label=str(args.source),
         )
