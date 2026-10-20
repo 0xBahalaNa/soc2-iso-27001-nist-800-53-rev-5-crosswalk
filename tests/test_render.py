@@ -1,5 +1,3 @@
-"""Byte-stable render output for a fixed normalized row list."""
-
 from __future__ import annotations
 
 import sys

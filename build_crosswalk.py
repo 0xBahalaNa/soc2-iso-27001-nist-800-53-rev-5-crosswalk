@@ -11,7 +11,7 @@ import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 
@@ -184,18 +184,26 @@ def render_csv(rows: list[dict[str, str]]) -> str:
 
 RenderFn = Callable[[list[dict[str, str]]], str]
 
-# Name is the argparse dest suffix: --out-<name> binds args.out_<name>.
-ARTIFACTS: tuple[tuple[str, Path, RenderFn], ...] = (
-    ("md", Path("crosswalk.md"), render_markdown),
-    ("json", Path("crosswalk.json"), render_json),
-    ("csv", Path("crosswalk.csv"), render_csv),
+
+class Artifact(NamedTuple):
+    cli_name: str
+    default_path: Path
+    render: RenderFn
+
+
+ARTIFACTS = (
+    Artifact("md", Path("crosswalk.md"), render_markdown),
+    Artifact("json", Path("crosswalk.json"), render_json),
+    Artifact("csv", Path("crosswalk.csv"), render_csv),
 )
 
 
 def emit_artifacts(rows: list[dict[str, str]], paths: dict[str, Path]) -> None:
     """Write each rendered artifact to its output path."""
-    for name, _default_path, render_fn in ARTIFACTS:
-        paths[name].write_text(render_fn(rows), encoding="utf-8", newline="")
+    for artifact in ARTIFACTS:
+        paths[artifact.cli_name].write_text(
+            artifact.render(rows), encoding="utf-8", newline=""
+        )
 
 
 def check_drift(
@@ -208,10 +216,10 @@ def check_drift(
     """Compare freshly rendered artifacts to on-disk files; return drift messages."""
     messages: list[str] = []
 
-    for name, default_path, render_fn in ARTIFACTS:
-        override = overrides[name]
-        path = override if override is not None else source.parent / default_path
-        expected = render_fn(rows)
+    for artifact in ARTIFACTS:
+        override = overrides[artifact.cli_name]
+        path = override if override is not None else source.parent / artifact.default_path
+        expected = artifact.render(rows)
         try:
             actual = path.read_bytes()
         except OSError as exc:
@@ -267,8 +275,8 @@ def main() -> int:
 
     rows = normalize_rows(data["mappings"])
     overrides: dict[str, Path | None] = {
-        name: getattr(args, f"out_{name}")
-        for name, _default_path, _render_fn in ARTIFACTS
+        artifact.cli_name: getattr(args, f"out_{artifact.cli_name}")
+        for artifact in ARTIFACTS
     }
 
     if args.check:
@@ -286,12 +294,12 @@ def main() -> int:
 
     missing_outputs: list[str] = []
     emit_paths: dict[str, Path] = {}
-    for name, _default_path, _render_fn in ARTIFACTS:
-        path = overrides[name]
+    for artifact in ARTIFACTS:
+        path = overrides[artifact.cli_name]
         if path is None:
-            missing_outputs.append(f"--out-{name}")
+            missing_outputs.append(f"--out-{artifact.cli_name}")
         else:
-            emit_paths[name] = path
+            emit_paths[artifact.cli_name] = path
     if missing_outputs:
         parser.error(
             "the following arguments are required when not using --check: "

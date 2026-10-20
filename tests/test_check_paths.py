@@ -1,5 +1,3 @@
-"""--check default artifact paths follow the source file."""
-
 from __future__ import annotations
 
 import shutil
