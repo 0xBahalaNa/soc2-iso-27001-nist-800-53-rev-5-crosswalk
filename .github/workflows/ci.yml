@@ -17,3 +17,5 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python build_crosswalk.py --source mappings.yaml --check
       - run: python -m unittest test_readme_span.py
+      - run: python -m unittest test_build_crosswalk
+      - run: python -m unittest discover -s tests
