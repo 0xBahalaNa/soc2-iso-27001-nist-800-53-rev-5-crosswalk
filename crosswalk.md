@@ -16,15 +16,15 @@ Pivot: SOC 2 Trust Services Criteria (Common Criteria). NIST 800-53 Rev 5 is the
 
 ## Gaps & Conflicts
 
-### CC6.6 / IA-5 (Partial)
+### CC6.6 / IA-5 / A.5.17 (Partial)
 
 IA-5 manages the authenticator lifecycle — issuance, strength, default changes, rotation, and revocation. CC6.6 blends authentication mechanism and credential management. ISO separates A.5.17 (authentication information / authenticator management) from A.8.5 (secure authentication mechanism). An ISO audit may require the authenticator-policy artifact separately even when SOC 2 and NIST evidence already covers the mechanism.
 
-### CC8.1 / CM-2 (Partial)
+### CC8.1 / CM-2 / A.8.9 (Partial)
 
 CM-2 develops and maintains a baseline configuration under configuration control, reviewed on defined frequency and on install or upgrade. CC8.1 frames broad change management — authorize, design, test, approve, and implement changes. ISO A.8.9 (configuration management) is config-to-config alignment, but the hop to the CC8.1 change pivot is loose. CM-2 keeps a foot in the change door via baseline maintained under configuration control.
 
-### CC8.1 / CM-6 (Contextual)
+### CC8.1 / CM-6 / A.8.9 (Contextual)
 
 CM-6 establishes and implements restrictive configuration settings, documents deviations, and monitors changes to settings. CC8.1 expects change authorization and approval evidence. CM-6 is pure hardened-settings state — a STIG or SCAP scan demonstrates configuration posture but does not satisfy a change-approval ticket. ISO A.8.9 aligns on configuration management; A.8.32 (change management) is the closer ISO frame for the SOC 2 pivot.
 

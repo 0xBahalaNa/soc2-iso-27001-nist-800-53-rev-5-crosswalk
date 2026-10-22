@@ -16,3 +16,4 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python build_crosswalk.py --source mappings.yaml --check
+      - run: python -m unittest test_build_crosswalk
