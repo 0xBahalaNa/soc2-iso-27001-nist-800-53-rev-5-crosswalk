@@ -6,3 +6,4 @@
 crosswalk.csv  text eol=lf
 crosswalk.md   text eol=lf
 crosswalk.json text eol=lf
+README.md      text eol=lf

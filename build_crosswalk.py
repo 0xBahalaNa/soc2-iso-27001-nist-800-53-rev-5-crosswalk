@@ -16,6 +16,21 @@ from typing import Any, NamedTuple
 
 import yaml
 
+DEFAULT_README = Path("README.md")
+
+CROSSWALK_START = "<!-- CROSSWALK:START -->"
+CROSSWALK_END = "<!-- CROSSWALK:END -->"
+
+
+class SpanError(ValueError):
+    pass
+
+
+class _SpanBounds(NamedTuple):
+    region_start: int
+    body_start: int
+    region_end: int
+
 VALID_CONFIDENCE = frozenset({"Strong", "Partial", "Contextual"})
 SOC2_CC_PATTERN = re.compile(r"^CC(\d+)\.(\d+)\Z")
 NIST_PATTERN = re.compile(r"^([A-Z]{2})-(\d+)(?:\((\d+)\))?\Z")
@@ -245,30 +260,34 @@ def normalize_rows(mappings: list[dict[str, Any]]) -> list[dict[str, str]]:
     return normalized
 
 
-def render_markdown(rows: list[dict[str, str]]) -> str:
-    """Return a human-readable Markdown table plus Gaps & Conflicts section."""
+def render_controls_table(rows: list[dict[str, str]]) -> str:
     lines = [
-        "# SOC 2 / ISO 27001 / NIST 800-53 Rev 5 Crosswalk",
-        "",
-        "Pivot: SOC 2 Trust Services Criteria (Common Criteria). "
-        "NIST 800-53 Rev 5 is the bridge column; "
-        "ISO 27001:2022 Annex A is the third column.",
-        "",
         "| SOC 2 CC | NIST 800-53 | ISO 27001:2022 | Confidence | Rationale |",
         "| --- | --- | --- | --- | --- |",
     ]
-
     for row in rows:
         lines.append(
             f"| {_md_cell(row['soc2_cc'])} | {_md_cell(row['nist_800_53'])} | "
             f"{_md_cell(row['iso_27001_2022'])} | {_md_cell(row['confidence'])} | "
             f"{_md_cell(row['rationale'])} |"
         )
+    return "\n".join(lines) + "\n"
 
+
+def render_markdown(rows: list[dict[str, str]]) -> str:
+    """Return a human-readable Markdown table plus Gaps & Conflicts section."""
+    title = "# SOC 2 / ISO 27001 / NIST 800-53 Rev 5 Crosswalk"
+    pivot = (
+        "Pivot: SOC 2 Trust Services Criteria (Common Criteria). "
+        "NIST 800-53 Rev 5 is the bridge column; "
+        "ISO 27001:2022 Annex A is the third column."
+    )
+    preamble = "\n".join([title, "", pivot, ""]) + "\n"
+    table = render_controls_table(rows)
     gap_rows = [row for row in rows if row["confidence"] != "Strong"]
-    lines.extend(["", "## Gaps & Conflicts", ""])
+    gap_lines = ["", "## Gaps & Conflicts", ""]
     for row in gap_rows:
-        lines.extend(
+        gap_lines.extend(
             [
                 f"### {row['soc2_cc']} / {row['nist_800_53']} / "
                 f"{row['iso_27001_2022']} ({row['confidence']})",
@@ -277,8 +296,8 @@ def render_markdown(rows: list[dict[str, str]]) -> str:
                 "",
             ]
         )
-
-    return "\n".join(lines) + "\n"
+    gaps = "\n".join(gap_lines) + "\n"
+    return preamble + table + gaps
 
 
 def render_json(rows: list[dict[str, str]]) -> str:
@@ -293,6 +312,59 @@ def render_csv(rows: list[dict[str, str]]) -> str:
     writer.writeheader()
     writer.writerows(rows)
     return buf.getvalue()
+
+
+def _locate_span(document: str) -> _SpanBounds:
+    if "\r" in document:
+        raise SpanError("marked text contains CR")
+
+    starts: list[tuple[int, bool]] = []
+    ends: list[tuple[int, bool]] = []
+    pos = 0
+    limit = len(document)
+    while pos < limit:
+        newline = document.find("\n", pos)
+        if newline == -1:
+            line = document[pos:]
+            has_newline = False
+            next_pos = limit
+        else:
+            line = document[pos:newline]
+            has_newline = True
+            next_pos = newline + 1
+        if line == CROSSWALK_START:
+            starts.append((pos, has_newline))
+        elif line == CROSSWALK_END:
+            ends.append((pos, has_newline))
+        pos = next_pos
+
+    if not starts:
+        raise SpanError("CROSSWALK:START marker is missing")
+    if len(starts) > 1:
+        raise SpanError("CROSSWALK:START marker is duplicated")
+    if not ends:
+        raise SpanError("CROSSWALK:END marker is missing")
+    if len(ends) > 1:
+        raise SpanError("CROSSWALK:END marker is duplicated")
+
+    start_at, start_has_newline = starts[0]
+    end_at, end_has_newline = ends[0]
+    if end_at < start_at:
+        raise SpanError("CROSSWALK:END appears before CROSSWALK:START")
+
+    body_start = start_at + len(CROSSWALK_START) + (1 if start_has_newline else 0)
+    region_end = end_at + len(CROSSWALK_END) + (1 if end_has_newline else 0)
+    return _SpanBounds(start_at, body_start, region_end)
+
+
+def _canonical_region(body: str) -> str:
+    return CROSSWALK_START + "\n" + body + CROSSWALK_END + "\n"
+
+
+def _splice_readme(document: str, rows: list[dict[str, str]]) -> str:
+    bounds = _locate_span(document)
+    region = _canonical_region(render_controls_table(rows))
+    return document[:bounds.region_start] + region + document[bounds.region_end:]
 
 
 def _restore_outputs(
@@ -366,6 +438,16 @@ def emit_artifacts(rows: list[dict[str, str]], paths: dict[str, Path]) -> None:
     )
 
 
+def emit_readme(rows: list[dict[str, str]], path: Path) -> None:
+    actual = path.read_bytes()
+    updated = _splice_readme(actual.decode("utf-8"), rows).encode("utf-8")
+    if updated == actual:
+        return
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_bytes(updated)
+    temporary.replace(path)
+
+
 def check_drift(
     rows: list[dict[str, str]],
     source: Path,
@@ -396,6 +478,32 @@ def check_drift(
         )
 
     return messages
+
+
+def readme_drift(
+    rows: list[dict[str, str]],
+    path: Path,
+    *,
+    source_label: str,
+) -> list[str]:
+    try:
+        actual = path.read_bytes()
+    except OSError as exc:
+        return [f"error: {path}: {exc} (expected from {source_label})"]
+
+    try:
+        document = actual.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return [f"error: {path}: {exc} (expected from {source_label})"]
+
+    try:
+        expected = _splice_readme(document, rows)
+    except SpanError as exc:
+        return [f"error: {path}: {exc}"]
+
+    if actual != expected.encode("utf-8"):
+        return [f"error: {path}: drift vs {source_label} (rebuild required)"]
+    return []
 
 
 def main() -> int:
@@ -434,6 +542,7 @@ def main() -> int:
         return 1
 
     rows = normalize_rows(data["mappings"])
+    readme_path = args.source.parent / DEFAULT_README
     overrides: dict[str, Path | None] = {
         artifact.cli_name: getattr(args, f"out_{artifact.cli_name}")
         for artifact in ARTIFACTS
@@ -445,6 +554,9 @@ def main() -> int:
             args.source,
             overrides,
             source_label=str(args.source),
+        )
+        drift_messages += readme_drift(
+            rows, readme_path, source_label=str(args.source)
         )
         if drift_messages:
             for message in drift_messages:
@@ -467,7 +579,11 @@ def main() -> int:
         )
     try:
         emit_artifacts(rows, emit_paths)
-    except OSError as exc:
+        emit_readme(rows, readme_path)
+    except SpanError as exc:
+        print(f"error: {readme_path}: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, UnicodeDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0
