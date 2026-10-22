@@ -10,14 +10,11 @@ import json
 import os
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
-
-DEFAULT_OUT_MD = Path("crosswalk.md")
-DEFAULT_OUT_JSON = Path("crosswalk.json")
-DEFAULT_OUT_CSV = Path("crosswalk.csv")
 
 VALID_CONFIDENCE = frozenset({"Strong", "Partial", "Contextual"})
 SOC2_CC_PATTERN = re.compile(r"^CC(\d+)\.(\d+)\Z")
@@ -343,23 +340,46 @@ def _commit_rendered(files: tuple[tuple[Path, str], ...]) -> None:
         raise
 
 
+RenderFn = Callable[[list[dict[str, str]]], str]
+
+
+class Artifact(NamedTuple):
+    cli_name: str
+    default_path: Path
+    render: RenderFn
+
+
+ARTIFACTS = (
+    Artifact("md", Path("crosswalk.md"), render_markdown),
+    Artifact("json", Path("crosswalk.json"), render_json),
+    Artifact("csv", Path("crosswalk.csv"), render_csv),
+)
+
+
+def emit_artifacts(rows: list[dict[str, str]], paths: dict[str, Path]) -> None:
+    """Write every artifact, or none of them if any write fails."""
+    _commit_rendered(
+        tuple(
+            (paths[artifact.cli_name], artifact.render(rows))
+            for artifact in ARTIFACTS
+        )
+    )
+
+
 def check_drift(
     rows: list[dict[str, str]],
-    md_path: Path,
-    json_path: Path,
-    csv_path: Path,
+    source: Path,
+    overrides: dict[str, Path | None],
     *,
     source_label: str = "mappings.yaml",
 ) -> list[str]:
     """Compare freshly rendered artifacts to on-disk files; return drift messages."""
-    artifacts = (
-        (md_path, render_markdown(rows)),
-        (json_path, render_json(rows)),
-        (csv_path, render_csv(rows)),
-    )
     messages: list[str] = []
 
-    for path, expected in artifacts:
+    for artifact in ARTIFACTS:
+        override = overrides[artifact.cli_name]
+        path = override if override is not None else source.parent / artifact.default_path
+        expected = artifact.render(rows)
         try:
             actual = path.read_bytes()
         except OSError as exc:
@@ -413,16 +433,17 @@ def main() -> int:
             print(f"error: {error}", file=sys.stderr)
         return 1
 
+    rows = normalize_rows(data["mappings"])
+    overrides: dict[str, Path | None] = {
+        artifact.cli_name: getattr(args, f"out_{artifact.cli_name}")
+        for artifact in ARTIFACTS
+    }
+
     if args.check:
-        md_path = args.out_md or DEFAULT_OUT_MD
-        json_path = args.out_json or DEFAULT_OUT_JSON
-        csv_path = args.out_csv or DEFAULT_OUT_CSV
-        rows = normalize_rows(data["mappings"])
         drift_messages = check_drift(
             rows,
-            md_path,
-            json_path,
-            csv_path,
+            args.source,
+            overrides,
             source_label=str(args.source),
         )
         if drift_messages:
@@ -431,28 +452,21 @@ def main() -> int:
             return 1
         return 0
 
-    missing_outputs = [
-        name
-        for name, value in (
-            ("--out-md", args.out_md),
-            ("--out-json", args.out_json),
-            ("--out-csv", args.out_csv),
-        )
-        if value is None
-    ]
+    missing_outputs: list[str] = []
+    emit_paths: dict[str, Path] = {}
+    for artifact in ARTIFACTS:
+        path = overrides[artifact.cli_name]
+        if path is None:
+            missing_outputs.append(f"--out-{artifact.cli_name}")
+        else:
+            emit_paths[artifact.cli_name] = path
     if missing_outputs:
         parser.error(
             "the following arguments are required when not using --check: "
             + ", ".join(missing_outputs)
         )
-    rows = normalize_rows(data["mappings"])
-    rendered = (
-        (args.out_md, render_markdown(rows)),
-        (args.out_json, render_json(rows)),
-        (args.out_csv, render_csv(rows)),
-    )
     try:
-        _commit_rendered(rendered)
+        emit_artifacts(rows, emit_paths)
     except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
