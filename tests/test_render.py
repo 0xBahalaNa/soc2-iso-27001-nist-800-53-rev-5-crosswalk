@@ -39,7 +39,7 @@ Pivot: SOC 2 Trust Services Criteria (Common Criteria). NIST 800-53 Rev 5 is the
 
 ## Gaps & Conflicts
 
-### CC1.1 / AC-2 (Partial)
+### CC1.1 / AC-2 / A.5.2 (Partial)
 
 Only part of the account lifecycle.
 

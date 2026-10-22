@@ -7,6 +7,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -16,9 +17,9 @@ from typing import Any, NamedTuple
 import yaml
 
 VALID_CONFIDENCE = frozenset({"Strong", "Partial", "Contextual"})
-SOC2_CC_PATTERN = re.compile(r"^CC\d+\.\d+$")
-NIST_PATTERN = re.compile(r"^[A-Z]{2}-\d+(?:\(\d+\))?$")
-ISO_PATTERN = re.compile(r"^A\.[5-8]\.\d+$")
+SOC2_CC_PATTERN = re.compile(r"^CC(\d+)\.(\d+)\Z")
+NIST_PATTERN = re.compile(r"^([A-Z]{2})-(\d+)(?:\((\d+)\))?\Z")
+ISO_PATTERN = re.compile(r"^A\.([5-8])\.(\d+)\Z")
 FIELDNAMES = [
     "soc2_cc",
     "nist_800_53",
@@ -26,6 +27,15 @@ FIELDNAMES = [
     "confidence",
     "rationale",
 ]
+TOP_LEVEL_KEYS = frozenset({"metadata", "mappings"})
+METADATA_STRING_FIELDS = (
+    "version",
+    "pivot_framework",
+    "bridge_framework",
+    "third_framework",
+)
+METADATA_KEYS = frozenset(METADATA_STRING_FIELDS + ("row_count",))
+_GAP_LEADER = re.compile(r"^([#>\-|])", re.MULTILINE)
 
 
 def load_mappings(path: Path) -> dict[str, Any]:
@@ -39,9 +49,71 @@ def load_mappings(path: Path) -> dict[str, Any]:
     return data
 
 
+def _metadata_errors(metadata: Any, mappings: Any) -> list[str]:
+    if not isinstance(metadata, dict):
+        return ["metadata must be a mapping"]
+
+    errors: list[str] = []
+    for key in sorted(metadata):
+        if key not in METADATA_KEYS:
+            errors.append(f"metadata: unknown field {key!r}")
+
+    for key in METADATA_STRING_FIELDS:
+        if key not in metadata:
+            errors.append(f"metadata: missing required field '{key}'")
+            continue
+        value = metadata[key]
+        if not isinstance(value, str) or not value.strip():
+            errors.append(
+                f"metadata: {key} must be a non-empty string (got {value!r})"
+            )
+
+    if "row_count" not in metadata:
+        errors.append("metadata: missing required field 'row_count'")
+    else:
+        count = metadata["row_count"]
+        if type(count) is not int:
+            errors.append(f"metadata: row_count must be an int (got {count!r})")
+        elif isinstance(mappings, list) and count != len(mappings):
+            errors.append(
+                f"metadata: row_count must equal {len(mappings)} (got {count})"
+            )
+    return errors
+
+
+def _control_list_errors(
+    prefix: str,
+    field: str,
+    value: Any,
+    pattern: re.Pattern[str],
+) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return [f"{prefix}: {field} must be a non-empty list"]
+
+    errors: list[str] = []
+    seen: list[Any] = []
+    for control in value:
+        if control in seen:
+            errors.append(f"{prefix}: duplicate {field} control {control!r}")
+        else:
+            seen.append(control)
+        if not isinstance(control, str) or pattern.match(control) is None:
+            errors.append(f"{prefix}: invalid {field} control {control!r}")
+    return errors
+
+
 def validate_mappings(data: dict[str, Any]) -> list[str]:
     """Return a list of validation error messages (empty if valid)."""
     errors: list[str] = []
+
+    for key in sorted(data):
+        if key not in TOP_LEVEL_KEYS:
+            errors.append(f"unknown top-level key {key!r}")
+
+    if "metadata" not in data:
+        errors.append("missing required top-level key 'metadata'")
+    else:
+        errors.extend(_metadata_errors(data["metadata"], data.get("mappings")))
 
     mappings = data.get("mappings")
     if not isinstance(mappings, list):
@@ -51,6 +123,7 @@ def validate_mappings(data: dict[str, Any]) -> list[str]:
     if len(mappings) < 1:
         errors.append(f"mappings must contain at least 1 row (found {len(mappings)})")
 
+    seen_rows: list[tuple[int, dict[str, Any]]] = []
     for index, row in enumerate(mappings, start=1):
         prefix = f"row {index}"
 
@@ -58,33 +131,34 @@ def validate_mappings(data: dict[str, Any]) -> list[str]:
             errors.append(f"{prefix}: must be a mapping")
             continue
 
+        for earlier, previous in seen_rows:
+            if previous == row:
+                errors.append(f"{prefix}: duplicate of row {earlier}")
+                break
+        seen_rows.append((index, row))
+
+        for key in sorted(row):
+            if key not in FIELDNAMES:
+                errors.append(f"{prefix}: unknown field {key!r}")
+
         for field in FIELDNAMES:
             if field not in row:
                 errors.append(f"{prefix}: missing required field '{field}'")
 
         soc2_cc = row.get("soc2_cc")
-        if not isinstance(soc2_cc, str) or not SOC2_CC_PATTERN.match(soc2_cc):
+        if not isinstance(soc2_cc, str) or SOC2_CC_PATTERN.match(soc2_cc) is None:
             errors.append(f"{prefix}: soc2_cc must match CC#.# (got {soc2_cc!r})")
 
-        nist = row.get("nist_800_53")
-        if not isinstance(nist, list) or not nist:
-            errors.append(f"{prefix}: nist_800_53 must be a non-empty list")
-        else:
-            for control in nist:
-                if not isinstance(control, str) or not NIST_PATTERN.match(control):
-                    errors.append(
-                        f"{prefix}: invalid nist_800_53 control {control!r}"
-                    )
-
-        iso = row.get("iso_27001_2022")
-        if not isinstance(iso, list) or not iso:
-            errors.append(f"{prefix}: iso_27001_2022 must be a non-empty list")
-        else:
-            for control in iso:
-                if not isinstance(control, str) or not ISO_PATTERN.match(control):
-                    errors.append(
-                        f"{prefix}: invalid iso_27001_2022 control {control!r}"
-                    )
+        errors.extend(
+            _control_list_errors(
+                prefix, "nist_800_53", row.get("nist_800_53"), NIST_PATTERN
+            )
+        )
+        errors.extend(
+            _control_list_errors(
+                prefix, "iso_27001_2022", row.get("iso_27001_2022"), ISO_PATTERN
+            )
+        )
 
         confidence = row.get("confidence")
         if confidence not in VALID_CONFIDENCE:
@@ -105,13 +179,51 @@ def _join_controls(controls: list[str]) -> str:
 
 
 def _md_cell(value: str) -> str:
-    return value.replace("|", "\\|")
+    flat = value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
+    return flat.replace("\\", "\\\\").replace("|", "\\|")
 
 
-def _sort_key(row: dict[str, Any]) -> tuple[str, str]:
-    nist = row.get("nist_800_53", [])
-    primary_nist = nist[0] if isinstance(nist, list) and nist else ""
-    return (str(row.get("soc2_cc", "")), primary_nist)
+def _escape_gap_prose(text: str) -> str:
+    return _GAP_LEADER.sub(r"\\\1", text)
+
+
+def _matched_groups(pattern: re.Pattern[str], value: str, label: str) -> re.Match[str]:
+    found = pattern.match(value)
+    if found is None:
+        raise ValueError(f"unvalidated {label} {value!r}")
+    return found
+
+
+def _sort_key(
+    row: dict[str, Any],
+) -> tuple[
+    tuple[int, int],
+    tuple[tuple[str, int, tuple[int, ...]], ...],
+    tuple[tuple[int, int], ...],
+    str,
+    str,
+]:
+    soc2 = _matched_groups(SOC2_CC_PATTERN, row["soc2_cc"], "soc2_cc")
+    nist_keys: list[tuple[str, int, tuple[int, ...]]] = []
+    for control in row["nist_800_53"]:
+        family, number, enhancement = _matched_groups(
+            NIST_PATTERN, control, "nist_800_53"
+        ).groups()
+        enh = () if enhancement is None else (int(enhancement),)
+        nist_keys.append((family, int(number), enh))
+    iso_keys: list[tuple[int, int]] = []
+    for control in row["iso_27001_2022"]:
+        clause, number = _matched_groups(
+            ISO_PATTERN, control, "iso_27001_2022"
+        ).groups()
+        iso_keys.append((int(clause), int(number)))
+    return (
+        (int(soc2.group(1)), int(soc2.group(2))),
+        tuple(nist_keys),
+        tuple(iso_keys),
+        row["confidence"],
+        row["rationale"],
+    )
 
 
 def normalize_rows(mappings: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -158,9 +270,10 @@ def render_markdown(rows: list[dict[str, str]]) -> str:
     for row in gap_rows:
         lines.extend(
             [
-                f"### {row['soc2_cc']} / {row['nist_800_53']} ({row['confidence']})",
+                f"### {row['soc2_cc']} / {row['nist_800_53']} / "
+                f"{row['iso_27001_2022']} ({row['confidence']})",
                 "",
-                row["rationale"],
+                _escape_gap_prose(row["rationale"]),
                 "",
             ]
         )
@@ -182,6 +295,51 @@ def render_csv(rows: list[dict[str, str]]) -> str:
     return buf.getvalue()
 
 
+def _restore_outputs(
+    temps: list[Path],
+    published: list[tuple[Path, bytes | None]],
+) -> OSError | None:
+    restore_error: OSError | None = None
+    for dest, prior in reversed(published):
+        try:
+            if prior is None:
+                dest.unlink(missing_ok=True)
+            else:
+                dest.write_bytes(prior)
+        except OSError as exc:
+            restore_error = exc
+    for tmp in temps:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError as exc:
+            restore_error = exc
+    return restore_error
+
+
+def _commit_rendered(files: tuple[tuple[Path, str], ...]) -> None:
+    temps: list[Path] = []
+    published: list[tuple[Path, bytes | None]] = []
+    try:
+        staged: list[tuple[Path, Path]] = []
+        for index, (dest, text) in enumerate(files):
+            tmp = dest.with_name(f".{dest.name}.{os.getpid()}.{index}.tmp")
+            tmp.write_text(text, encoding="utf-8", newline="")
+            temps.append(tmp)
+            staged.append((tmp, dest))
+        priors: list[bytes | None] = []
+        for _tmp, dest in staged:
+            priors.append(dest.read_bytes() if dest.is_file() else None)
+        for (tmp, dest), prior in zip(staged, priors):
+            os.replace(tmp, dest)
+            published.append((dest, prior))
+    except OSError as original:
+        restore_error = _restore_outputs(temps, published)
+        if restore_error is not None:
+            raise restore_error from original
+        raise
+
+
 RenderFn = Callable[[list[dict[str, str]]], str]
 
 
@@ -199,11 +357,13 @@ ARTIFACTS = (
 
 
 def emit_artifacts(rows: list[dict[str, str]], paths: dict[str, Path]) -> None:
-    """Write each rendered artifact to its output path."""
-    for artifact in ARTIFACTS:
-        paths[artifact.cli_name].write_text(
-            artifact.render(rows), encoding="utf-8", newline=""
+    """Write every artifact, or none of them if any write fails."""
+    _commit_rendered(
+        tuple(
+            (paths[artifact.cli_name], artifact.render(rows))
+            for artifact in ARTIFACTS
         )
+    )
 
 
 def check_drift(
