@@ -115,7 +115,9 @@ CC6.1,AC-3,A.5.15 / A.8.3,Strong,AC-3 enforces approved authorizations for logic
 ```bash
 git clone https://github.com/0xBahalaNa/soc2-iso27001-nist-crosswalk.git
 cd soc2-iso27001-nist-crosswalk
-python -m venv .venv && source .venv/bin/activate
+sudo apt-get update
+sudo apt-get install -y python3-venv
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Build all artifacts from the YAML source
